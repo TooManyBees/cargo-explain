@@ -1,0 +1,15 @@
+[package]
+name = "explain"
+version = "0.1.0"
+authors = ["Jess Bees <hi@toomanybees.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+markdown = "0.3.0"
+syntect = { version = "4.4.0", default-features = false, features = [ "parsing", "assets", "dump-load", "regex-onig" ] }
+ansi_term = "0.12.1"
+# unicode-segmentation = "1.6.0"
+textwrap = "0.12.1"
+terminal_size = "0.1.13"
