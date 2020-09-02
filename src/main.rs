@@ -1,7 +1,8 @@
 use ansi_term::Style;
-use markdown::{tokenize, Block, Span};
+use markdown::{tokenize, Block, ListItem, Span};
 use std::env;
 use std::error::Error;
+use std::iter;
 use std::process::{self, Command};
 // use unicode_segmentation::UnicodeSegmentation;
 use syntect::easy::HighlightLines;
@@ -41,14 +42,7 @@ const ANSI_RESET: &str = "\x1B[0m";
 //     output
 // }
 
-fn join_spans(
-    spans: &[Span],
-    width: Option<usize>,
-    prefix: Option<&str>,
-    syntax: &SyntaxReference,
-    ps: &SyntaxSet,
-    ts: &ThemeSet,
-) -> String {
+fn join_spans(spans: &[Span], syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> String {
     let mut output = String::new();
     for span in spans {
         match span {
@@ -62,18 +56,29 @@ fn join_spans(
             }
             Span::Link(text, href, _) => {
                 let underline = Style::new().underline();
-                output.push_str(&format!("{} ({}{})", text, underline.paint(href), underline.suffix()));
-            },
+                output.push_str(&format!(
+                    "{} ({}{})",
+                    text,
+                    underline.paint(href),
+                    underline.suffix()
+                ));
+            }
             Span::Image(alt, src, title) => {
                 let underline = Style::new().underline();
                 let title = title.as_ref().map(|s| s.as_str()).unwrap_or("Image");
-                output.push_str(&format!("[{}: {}] ({}{})", title, alt, underline.paint(src), underline.suffix()));
-            },
+                output.push_str(&format!(
+                    "[{}: {}] ({}{})",
+                    title,
+                    alt,
+                    underline.paint(src),
+                    underline.suffix()
+                ));
+            }
             Span::Emphasis(spans) => {
                 let italic = Style::new().italic();
                 output.push_str(&format!(
                     "{}{}",
-                    italic.paint(join_spans(spans, width, prefix, syntax, ps, ts)),
+                    italic.paint(join_spans(spans, syntax, ps, ts)),
                     italic.suffix()
                 ));
             }
@@ -81,27 +86,63 @@ fn join_spans(
                 let bold = Style::new().bold();
                 output.push_str(&format!(
                     "{}{}",
-                    bold.paint(join_spans(spans, width, prefix, syntax, ps, ts)),
+                    bold.paint(join_spans(spans, syntax, ps, ts)),
                     bold.suffix()
                 ));
             }
         }
     }
-    if let Some(w) = width {
-        if let Some(p) = prefix {
-            let mut out = String::with_capacity(output.len());
-            for line in textwrap::wrap(&output, w - p.len()) {
-                out.push_str(&p);
-                out.push_str(" ");
-                out.push_str(&line);
-                out.push_str("\n");
+    output
+}
+
+enum Prefix {
+    None,
+    Simple(String),
+    List(String),
+}
+
+fn wrap_and_prefix_text(mut text: String, prefix: Prefix, terminal_width: Option<usize>) -> String {
+    if let Some(width) = terminal_width {
+        match prefix {
+            Prefix::None => textwrap::fill(&text, width),
+            Prefix::Simple(p) => {
+                let mut out = String::with_capacity(text.len());
+                // FIXME: get unicode width of p instead of p.len()
+                for line in textwrap::wrap(&text, width - p.len()) {
+                    out.push_str(&p);
+                    out.push_str(&line);
+                    out.push('\n');
+                }
+                out.truncate(out.len() - 1);
+                out
             }
-            out.trim_end().to_string()
-        } else {
-            textwrap::fill(&output, w)
+            Prefix::List(p) => {
+                let mut out = String::with_capacity(text.len());
+                let prefix_len = p.len();
+                let blank_prefix = iter::repeat(' ').take(prefix_len).collect::<String>();
+                let lines = textwrap::wrap(&text, width - prefix_len);
+                let mut lines = lines.iter();
+                if let Some(first_line) = lines.next() {
+                    out.push_str(&p);
+                    out.push_str(first_line);
+                    out.push('\n');
+                }
+                for line in lines {
+                    out.push_str(&blank_prefix);
+                    out.push_str(line);
+                    out.push('\n');
+                }
+                out.truncate(out.len() - 1);
+                out
+            }
         }
     } else {
-        output
+        match prefix {
+            Prefix::Simple(p) => text.insert_str(0, &p),
+            Prefix::List(p) => text.insert_str(0, &p),
+            _ => {}
+        }
+        text
     }
 }
 
@@ -120,31 +161,89 @@ fn highlight_code(code: &str, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &The
 fn print_block(
     block: Block,
     terminal_width: Option<usize>,
-    prefix: Option<&str>,
+    prefix: Prefix,
     syntax: &SyntaxReference,
     ps: &SyntaxSet,
     ts: &ThemeSet,
 ) {
     match block {
         Block::Header(spans, _) => {
-            let output = join_spans(&spans, terminal_width, prefix, &syntax, &ps, &ts);
+            let output = join_spans(&spans, &syntax, &ps, &ts);
+            let output = wrap_and_prefix_text(output, prefix, terminal_width);
             println!("{}\n", output);
         }
         Block::Paragraph(spans) => {
-            let output = join_spans(&spans, terminal_width, prefix, &syntax, &ps, &ts);
+            let output = join_spans(&spans, &syntax, &ps, &ts);
+            let output = wrap_and_prefix_text(output, prefix, terminal_width);
             println!("{}\n", output);
         }
         Block::Blockquote(blocks) => {
             for block in blocks {
-                print_block(block, terminal_width, Some("║"), syntax, ps, ts);
-            };
+                print_block(
+                    block,
+                    terminal_width,
+                    Prefix::Simple("║ ".into()),
+                    syntax,
+                    ps,
+                    ts,
+                );
+            }
         }
         Block::CodeBlock(_, code) => {
             let highlighted = highlight_code(&code, &syntax, &ps, &ts);
             println!("{}\n", highlighted);
         }
-        Block::OrderedList(items, _) => unimplemented!(),
-        Block::UnorderedList(items) => unimplemented!(),
+        Block::OrderedList(items, _) => {
+            // idgaf about ordered lists, clearly the least liked html element
+            for item in items {
+                match item {
+                    ListItem::Simple(spans) => {
+                        let output = join_spans(&spans, &syntax, &ps, &ts);
+                        let output =
+                            wrap_and_prefix_text(output, Prefix::List("* ".into()), terminal_width);
+                        println!("{}", output);
+                    }
+                    ListItem::Paragraph(blocks) => {
+                        for block in blocks {
+                            print_block(
+                                block,
+                                terminal_width,
+                                Prefix::List("* ".into()),
+                                syntax,
+                                ps,
+                                ts,
+                            );
+                        }
+                    }
+                }
+            }
+            println!("");
+        }
+        Block::UnorderedList(items) => {
+            for item in items {
+                match item {
+                    ListItem::Simple(spans) => {
+                        let output = join_spans(&spans, &syntax, &ps, &ts);
+                        let output =
+                            wrap_and_prefix_text(output, Prefix::List("* ".into()), terminal_width);
+                        println!("{}", output);
+                    }
+                    ListItem::Paragraph(blocks) => {
+                        for block in blocks {
+                            print_block(
+                                block,
+                                terminal_width,
+                                Prefix::List("* ".into()),
+                                syntax,
+                                ps,
+                                ts,
+                            );
+                        }
+                    }
+                }
+            }
+            println!("");
+        }
         Block::Raw(string) => println!("{}\n", string),
         Block::Hr => {
             if let Some(width) = terminal_width {
@@ -191,14 +290,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
 
     let input = {
-        let result = Command::new("rustc").args(&["--explain", &err_name]).output()?;
+        let result = Command::new("rustc")
+            .args(&["--explain", &err_name])
+            .output()?;
         String::from_utf8(result.stdout)
             .expect("rustc --explain terminal output wasn't valid utf-8")
     };
 
     let blox = tokenize(&input);
     for block in blox {
-        print_block(block, terminal_width, None, &syntax, &ps, &ts);
+        print_block(block, terminal_width, Prefix::None, &syntax, &ps, &ts);
     }
 
     Ok(())
