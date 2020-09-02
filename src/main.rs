@@ -44,6 +44,7 @@ const ANSI_RESET: &str = "\x1B[0m";
 fn join_spans(
     spans: &[Span],
     width: Option<usize>,
+    prefix: Option<&str>,
     syntax: &SyntaxReference,
     ps: &SyntaxSet,
     ts: &ThemeSet,
@@ -72,7 +73,7 @@ fn join_spans(
                 let italic = Style::new().italic();
                 output.push_str(&format!(
                     "{}{}",
-                    italic.paint(join_spans(spans, width, syntax, ps, ts)),
+                    italic.paint(join_spans(spans, width, prefix, syntax, ps, ts)),
                     italic.suffix()
                 ));
             }
@@ -80,14 +81,25 @@ fn join_spans(
                 let bold = Style::new().bold();
                 output.push_str(&format!(
                     "{}{}",
-                    bold.paint(join_spans(spans, width, syntax, ps, ts)),
+                    bold.paint(join_spans(spans, width, prefix, syntax, ps, ts)),
                     bold.suffix()
                 ));
             }
         }
     }
     if let Some(w) = width {
-        textwrap::fill(&output, w)
+        if let Some(p) = prefix {
+            let mut out = String::with_capacity(output.len());
+            for line in textwrap::wrap(&output, w - p.len()) {
+                out.push_str(&p);
+                out.push_str(" ");
+                out.push_str(&line);
+                out.push_str("\n");
+            }
+            out.trim_end().to_string()
+        } else {
+            textwrap::fill(&output, w)
+        }
     } else {
         output
     }
@@ -103,6 +115,48 @@ fn highlight_code(code: &str, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &The
     }
     output.push_str(ANSI_RESET);
     output
+}
+
+fn print_block(
+    block: Block,
+    terminal_width: Option<usize>,
+    prefix: Option<&str>,
+    syntax: &SyntaxReference,
+    ps: &SyntaxSet,
+    ts: &ThemeSet,
+) {
+    match block {
+        Block::Header(spans, _) => {
+            let output = join_spans(&spans, terminal_width, prefix, &syntax, &ps, &ts);
+            println!("{}\n", output);
+        }
+        Block::Paragraph(spans) => {
+            let output = join_spans(&spans, terminal_width, prefix, &syntax, &ps, &ts);
+            println!("{}\n", output);
+        }
+        Block::Blockquote(blocks) => {
+            for block in blocks {
+                print_block(block, terminal_width, Some("║"), syntax, ps, ts);
+            };
+        }
+        Block::CodeBlock(_, code) => {
+            let highlighted = highlight_code(&code, &syntax, &ps, &ts);
+            println!("{}\n", highlighted);
+        }
+        Block::OrderedList(items, _) => unimplemented!(),
+        Block::UnorderedList(items) => unimplemented!(),
+        Block::Raw(string) => println!("{}\n", string),
+        Block::Hr => {
+            if let Some(width) = terminal_width {
+                for _ in 0..width {
+                    print!("━");
+                }
+                println!("\n");
+            } else {
+                println!("━━━━━\n");
+            }
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -144,26 +198,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let blox = tokenize(&input);
     for block in blox {
-        match block {
-            Block::Header(spans, _) => {
-                let output = join_spans(&spans, terminal_width, &syntax, &ps, &ts);
-                print!("{}", output);
-            }
-            Block::Paragraph(spans) => {
-                let output = join_spans(&spans, terminal_width, &syntax, &ps, &ts);
-                print!("{}", output);
-            }
-            Block::Blockquote(blocks) => unimplemented!(),
-            Block::CodeBlock(_, code) => {
-                let highlighted = highlight_code(&code, &syntax, &ps, &ts);
-                print!("{}", highlighted);
-            }
-            Block::OrderedList(items, _) => unimplemented!(),
-            Block::UnorderedList(items) => unimplemented!(),
-            Block::Raw(string) => println!("{}", string),
-            Block::Hr => println!("---"),
-        }
-        println!("\n");
+        print_block(block, terminal_width, None, &syntax, &ps, &ts);
     }
 
     Ok(())
