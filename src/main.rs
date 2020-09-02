@@ -1,13 +1,14 @@
 use ansi_term::Style;
 use markdown::{tokenize, Block, Span};
+use std::env;
 use std::error::Error;
-use std::process::Command;
+use std::process::{self, Command};
 // use unicode_segmentation::UnicodeSegmentation;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
-use terminal_size::{terminal_size, Height, Width};
+use terminal_size::terminal_size;
 use textwrap;
 
 const SYNTECT_THEME: &str = "base16-eighties.dark";
@@ -107,8 +108,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ts = ThemeSet::load_defaults();
     let syntax = ps.find_syntax_by_extension("rs").unwrap();
 
+    let err_name =
+        if let Some(idx) = env::args().enumerate().skip(1).find_map(|(idx, arg)| {
+            if arg == "--explain" {
+                Some(idx)
+            } else {
+                None
+            }
+        }) {
+            env::args().nth(idx + 1)
+        } else {
+            env::args().skip(1).next()
+        }
+        .unwrap_or_else(|| {
+            let bin_name = env::args().next().unwrap();
+            eprintln!(
+                "Missing error number to explain.\nUsage: {} --explain <error number>",
+                bin_name
+            );
+            process::exit(1);
+        });
+
     let input = {
-        let result = Command::new("rustc").args(&["--explain", "525"]).output()?;
+        let result = Command::new("rustc").args(&["--explain", &err_name]).output()?;
         String::from_utf8(result.stdout)
             .expect("rustc --explain terminal output wasn't valid utf-8")
     };
