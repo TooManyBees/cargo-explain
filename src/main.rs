@@ -59,8 +59,15 @@ fn join_spans(
                 let escaped = as_24_bit_terminal_escaped(&ranges, true);
                 output.push_str(&format!("{}{}", escaped, ANSI_RESET));
             }
-            Span::Link(_, _, _) => unimplemented!(),
-            Span::Image(_, _, _) => unimplemented!(),
+            Span::Link(text, href, _) => {
+                let underline = Style::new().underline();
+                output.push_str(&format!("{} ({}{})", text, underline.paint(href), underline.suffix()));
+            },
+            Span::Image(alt, src, title) => {
+                let underline = Style::new().underline();
+                let title = title.as_ref().map(|s| s.as_str()).unwrap_or("Image");
+                output.push_str(&format!("[{}: {}] ({}{})", title, alt, underline.paint(src), underline.suffix()));
+            },
             Span::Emphasis(spans) => {
                 let italic = Style::new().italic();
                 output.push_str(&format!(
