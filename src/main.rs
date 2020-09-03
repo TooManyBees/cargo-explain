@@ -114,7 +114,9 @@ fn map_blocks(
 fn highlight_code(code: &str, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> String {
     let mut output = String::with_capacity(code.len());
     let mut h = HighlightLines::new(syntax, &ts.themes[SYNTECT_THEME]);
-    let ranges = h.highlight(code, ps);
+    let mut input = String::from("\n");
+    input.push_str(code);
+    let ranges = h.highlight(&input, ps);
     let escaped = as_24_bit_terminal_escaped(&ranges, true);
     output.push_str(&escaped);
     output.push_str(ANSI_RESET);
@@ -199,7 +201,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into_iter()
         .map(|b| map_block(b, &syntax, &ps, &ts))
         .collect();
-    let output = generate_markdown(mapped);
+    let mut output = generate_markdown(mapped);
+    // We add an extra newline at the start of highlighted code
+    // blocks to make the first line's background appear to span
+    // the entire line. Here, we remove the a newline before that
+    // to balance it out.
+    output = output.replace("\n\n\x1B", "\n\x1B");
 
     println!("{}", output);
 
