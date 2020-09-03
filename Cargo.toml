@@ -11,3 +11,4 @@ markdown = "0.3.0"
 syntect = { version = "4.4.0", default-features = false, features = [ "parsing", "assets", "dump-load", "regex-onig" ] }
 ansi_term = "0.12.1"
 textwrap = "0.12.1"
+atty = "0.2.14"

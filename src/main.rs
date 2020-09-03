@@ -1,4 +1,5 @@
 use ansi_term::{ANSIStrings, Color, Style};
+use atty;
 use markdown::{generate_markdown, tokenize, Block, ListItem, Span};
 use std::env;
 use std::error::Error;
@@ -176,13 +177,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         process::exit(1);
     });
 
+    if !atty::is(atty::Stream::Stdout) {
+        let status = Command::new("rustc")
+            .args(&["--explain", &err_name])
+            .status()?;
+        process::exit(status.code().unwrap_or(0));
+    }
+
     let input = {
         let result = Command::new("rustc")
             .args(&["--explain", &err_name])
             .stderr(Stdio::inherit())
             .output()?;
         if !result.status.success() {
-            process::exit(1);
+            process::exit(result.status.code().unwrap_or(1));
         }
         String::from_utf8(result.stdout)
             .expect("rustc --explain terminal output wasn't valid utf-8")
