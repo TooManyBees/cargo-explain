@@ -1,8 +1,9 @@
-use ansi_term::Style;
+use ansi_term::{Color, Style, ANSIStrings};
 use markdown::{generate_markdown, tokenize, Block, ListItem, Span};
+use std::path::PathBuf;
 use std::env;
 use std::error::Error;
-use std::process::{self, Command};
+use std::process::{self, Command, Stdio};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
@@ -97,8 +98,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ts = ThemeSet::load_defaults();
     let syntax = ps.find_syntax_by_extension("rs").unwrap();
 
+    let mut args = env::args().peekable();
+    let command_name = {
+        let mut command_name = args.next().and_then(|path| {
+            PathBuf::from(path).file_name().map(|f| f.to_string_lossy().into_owned())
+        }).unwrap();
+        // Was this invoked via cargo-explain instead of directly?
+        if Some(&"explain".to_string()) == args.peek() {
+            args.next();
+            command_name = "cargo explain".to_string();
+        }
+        command_name
+    };
+
     let err_name =
-        if let Some(idx) = env::args().enumerate().skip(1).find_map(|(idx, arg)| {
+        if let Some(idx) = env::args().enumerate().find_map(|(idx, arg)| {
             if arg == "--explain" {
                 Some(idx)
             } else {
@@ -107,14 +121,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         }) {
             env::args().nth(idx + 1)
         } else {
-            env::args().skip(1).next()
+            args.next()
         }
         .unwrap_or_else(|| {
-            let bin_name = env::args().next().unwrap();
-            eprintln!(
-                "Missing error number to explain.\nUsage: {} --explain <error number>",
-                bin_name
-            );
+            let strings = &[
+                Color::Red.bold().paint("error"),
+                Style::default().bold().paint(": missing error number to "),
+                Style::default().bold().paint(&command_name),
+                Style::default().bold().paint("."),
+                Style::default().paint("\nUsage: "),
+                Style::default().paint(&command_name),
+                Style::default().paint(" --explain <error number>")
+            ];
+            eprintln!("{}", ANSIStrings(strings));
             process::exit(1);
         });
 
