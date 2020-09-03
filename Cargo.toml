@@ -3,6 +3,10 @@ name = "cargo-explain"
 version = "1.0.0"
 authors = ["Jess Bees <hi@toomanybees.com>"]
 edition = "2018"
+description = "A syntax highlighting replacement for rustc --explain"
+license = "MIT"
+homepage = "https://github.com/TooManyBees/cargo-explain"
+repository = "https://github.com/TooManyBees/cargo-explain"
 
 [dependencies]
 markdown = "0.3.0"
