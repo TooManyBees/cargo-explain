@@ -67,8 +67,8 @@ fn map_block(block: Block, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeS
         Block::Header(spans, level) => Block::Header(map_spans(spans, syntax, ps, ts), level),
         Block::Paragraph(spans) => Block::Paragraph(wrap_spans(spans, syntax, ps, ts)),
         Block::Blockquote(blocks) => Block::Blockquote(map_blocks(blocks, syntax, ps, ts)),
-        Block::CodeBlock(lang, code) => {
-            Block::CodeBlock(lang, highlight_code(&code, syntax, ps, ts))
+        Block::CodeBlock(_, code) => {
+            Block::Paragraph(vec![Span::Text(highlight_code(&code, syntax, ps, ts))])
         }
         Block::OrderedList(items, something) => {
             let items = items
@@ -119,7 +119,6 @@ fn highlight_code(code: &str, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &The
         output.push_str(&escaped);
     }
     output.push_str(ANSI_RESET);
-    output.push('\n');
     output
 }
 
