@@ -10,6 +10,4 @@ edition = "2018"
 markdown = "0.3.0"
 syntect = { version = "4.4.0", default-features = false, features = [ "parsing", "assets", "dump-load", "regex-onig" ] }
 ansi_term = "0.12.1"
-# unicode-segmentation = "1.6.0"
 textwrap = "0.12.1"
-terminal_size = "0.1.13"

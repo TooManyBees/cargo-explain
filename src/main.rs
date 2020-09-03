@@ -1,149 +1,67 @@
 use ansi_term::Style;
-use markdown::{tokenize, Block, ListItem, Span};
+use markdown::{generate_markdown, tokenize, Block, ListItem, Span};
 use std::env;
 use std::error::Error;
-use std::iter;
 use std::process::{self, Command};
-// use unicode_segmentation::UnicodeSegmentation;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
-use terminal_size::terminal_size;
 use textwrap;
 
 const SYNTECT_THEME: &str = "base16-eighties.dark";
 const ANSI_RESET: &str = "\x1B[0m";
 
-// fn break_into_lines(text: &str, length: usize) -> String {
-//     let mut output = String::with_capacity(text.len());
-//     for source_line in text.lines() {
-//         let mut col = 0;
-//         let mut line = String::new();
-//         let mut iter = source_line.split_word_bound_indices();
-//         for (idx, word) in iter {
-//             // if word is a separator
-//             // if word.chars().all(|c| c != '\u{A0}' && c != '\u{202F}' && c.is_whitespace()) {
-//             // }
-//             let num_graphemes = UnicodeSegmentation::graphemes(word, true).count();
-//             if col + num_graphemes < length {
-//                 line.push_str(word);
-//                 col += num_graphemes;
-//             } else {
-//                 output.push_str(&line);
-//                 line.clear();
-//                 line.push_str(word);
-//                 col = num_graphemes;
-//             }
-//         }
-//         output.push_str(&line);
-//         line.clear();
-//     }
-//     output
-// }
-
-fn join_spans(spans: &[Span], syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> String {
-    let mut output = String::new();
-    for span in spans {
-        match span {
-            Span::Break => output.push_str("\n"),
-            Span::Text(text) => output.push_str(&text),
-            Span::Code(code) => {
-                let mut h = HighlightLines::new(syntax, &ts.themes[SYNTECT_THEME]);
-                let ranges = h.highlight(code, ps);
-                let escaped = as_24_bit_terminal_escaped(&ranges, true);
-                output.push_str(&format!("{}{}", escaped, ANSI_RESET));
-            }
-            Span::Link(text, href, _) => {
-                let underline = Style::new().underline();
-                output.push_str(&format!(
-                    "{} ({}{})",
-                    text,
-                    underline.paint(href),
-                    underline.suffix()
-                ));
-            }
-            Span::Image(alt, src, title) => {
-                let underline = Style::new().underline();
-                let title = title.as_ref().map(|s| s.as_str()).unwrap_or("Image");
-                output.push_str(&format!(
-                    "[{}: {}] ({}{})",
-                    title,
-                    alt,
-                    underline.paint(src),
-                    underline.suffix()
-                ));
-            }
-            Span::Emphasis(spans) => {
-                let italic = Style::new().italic();
-                output.push_str(&format!(
-                    "{}{}",
-                    italic.paint(join_spans(spans, syntax, ps, ts)),
-                    italic.suffix()
-                ));
-            }
-            Span::Strong(spans) => {
-                let bold = Style::new().bold();
-                output.push_str(&format!(
-                    "{}{}",
-                    bold.paint(join_spans(spans, syntax, ps, ts)),
-                    bold.suffix()
-                ));
-            }
-        }
+fn map_span(span: Span, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> Span {
+    match span {
+        Span::Code(code) => {
+            let mut h = HighlightLines::new(syntax, &ts.themes[SYNTECT_THEME]);
+            let ranges = h.highlight(&code, ps);
+            let escaped = as_24_bit_terminal_escaped(&ranges, true);
+            Span::Text(format!("{}{}", escaped, ANSI_RESET))
+        },
+        Span::Emphasis(spans) => Span::Emphasis(map_spans(spans, syntax, ps, ts)),
+        Span::Strong(spans) => Span::Strong(map_spans(spans, syntax, ps, ts)),
+        _ => span,
     }
-    output
 }
 
-enum Prefix {
-    None,
-    Simple(String),
-    List(String),
+fn map_spans(spans: Vec<Span>, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> Vec<Span> {
+    spans.into_iter().map(|span| map_span(span, syntax, ps, ts)).collect()
 }
 
-fn wrap_and_prefix_text(mut text: String, prefix: Prefix, terminal_width: Option<usize>) -> String {
-    if let Some(width) = terminal_width {
-        match prefix {
-            Prefix::None => textwrap::fill(&text, width),
-            Prefix::Simple(p) => {
-                let mut out = String::with_capacity(text.len());
-                // FIXME: get unicode width of p instead of p.len()
-                for line in textwrap::wrap(&text, width - p.len()) {
-                    out.push_str(&p);
-                    out.push_str(&line);
-                    out.push('\n');
-                }
-                out.truncate(out.len() - 1);
-                out
-            }
-            Prefix::List(p) => {
-                let mut out = String::with_capacity(text.len());
-                let prefix_len = p.len();
-                let blank_prefix = iter::repeat(' ').take(prefix_len).collect::<String>();
-                let lines = textwrap::wrap(&text, width - prefix_len);
-                let mut lines = lines.iter();
-                if let Some(first_line) = lines.next() {
-                    out.push_str(&p);
-                    out.push_str(first_line);
-                    out.push('\n');
-                }
-                for line in lines {
-                    out.push_str(&blank_prefix);
-                    out.push_str(line);
-                    out.push('\n');
-                }
-                out.truncate(out.len() - 1);
-                out
-            }
-        }
-    } else {
-        match prefix {
-            Prefix::Simple(p) => text.insert_str(0, &p),
-            Prefix::List(p) => text.insert_str(0, &p),
-            _ => {}
-        }
-        text
+fn wrap_spans(spans: Vec<Span>, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> Vec<Span> {
+    let mapped = map_spans(spans, syntax, ps, ts);
+    let out = generate_markdown(vec![Block::Paragraph(mapped)]);
+    vec![Span::Text(textwrap::fill(&out, 80))]
+}
+
+fn map_block(block: Block, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> Block {
+    match block {
+        Block::Header(spans, level) => Block::Header(map_spans(spans, syntax, ps, ts), level),
+        Block::Paragraph(spans) => Block::Paragraph(wrap_spans(spans, syntax, ps, ts)),
+        Block::Blockquote(blocks) => Block::Blockquote(map_blocks(blocks, syntax, ps, ts)),
+        Block::CodeBlock(lang, code) => Block::CodeBlock(lang, highlight_code(&code, syntax, ps, ts)),
+        Block::OrderedList(items, something) => {
+            let items = items.into_iter().map(|item| match item {
+                ListItem::Simple(spans) => ListItem::Simple(map_spans(spans, syntax, ps, ts)),
+                ListItem::Paragraph(blocks) => ListItem::Paragraph(map_blocks(blocks, syntax, ps, ts)),
+            }).collect();
+            Block::OrderedList(items, something)
+        },
+        Block::UnorderedList(items) => {
+            let items = items.into_iter().map(|item| match item {
+                ListItem::Simple(spans) => ListItem::Simple(map_spans(spans, syntax, ps, ts)),
+                ListItem::Paragraph(blocks) => ListItem::Paragraph(map_blocks(blocks, syntax, ps, ts)),
+            }).collect();
+            Block::UnorderedList(items)
+        },
+        _ => block,
     }
+}
+
+fn map_blocks(spans: Vec<Block>, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> Vec<Block> {
+    spans.into_iter().map(|block| map_block(block, syntax, ps, ts)).collect()
 }
 
 fn highlight_code(code: &str, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> String {
@@ -155,114 +73,13 @@ fn highlight_code(code: &str, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &The
         output.push_str(&escaped);
     }
     output.push_str(ANSI_RESET);
+    output.push('\n');
     output
-}
-
-fn print_block(
-    block: Block,
-    terminal_width: Option<usize>,
-    prefix: Prefix,
-    syntax: &SyntaxReference,
-    ps: &SyntaxSet,
-    ts: &ThemeSet,
-) {
-    match block {
-        Block::Header(spans, _) => {
-            let output = join_spans(&spans, &syntax, &ps, &ts);
-            let output = wrap_and_prefix_text(output, prefix, terminal_width);
-            println!("{}\n", output);
-        }
-        Block::Paragraph(spans) => {
-            let output = join_spans(&spans, &syntax, &ps, &ts);
-            let output = wrap_and_prefix_text(output, prefix, terminal_width);
-            println!("{}\n", output);
-        }
-        Block::Blockquote(blocks) => {
-            for block in blocks {
-                print_block(
-                    block,
-                    terminal_width,
-                    Prefix::Simple("║ ".into()),
-                    syntax,
-                    ps,
-                    ts,
-                );
-            }
-        }
-        Block::CodeBlock(_, code) => {
-            let highlighted = highlight_code(&code, &syntax, &ps, &ts);
-            println!("{}\n", highlighted);
-        }
-        Block::OrderedList(items, _) => {
-            // idgaf about ordered lists, clearly the least liked html element
-            for item in items {
-                match item {
-                    ListItem::Simple(spans) => {
-                        let output = join_spans(&spans, &syntax, &ps, &ts);
-                        let output =
-                            wrap_and_prefix_text(output, Prefix::List("* ".into()), terminal_width);
-                        println!("{}", output);
-                    }
-                    ListItem::Paragraph(blocks) => {
-                        for block in blocks {
-                            print_block(
-                                block,
-                                terminal_width,
-                                Prefix::List("* ".into()),
-                                syntax,
-                                ps,
-                                ts,
-                            );
-                        }
-                    }
-                }
-            }
-            println!("");
-        }
-        Block::UnorderedList(items) => {
-            for item in items {
-                match item {
-                    ListItem::Simple(spans) => {
-                        let output = join_spans(&spans, &syntax, &ps, &ts);
-                        let output =
-                            wrap_and_prefix_text(output, Prefix::List("* ".into()), terminal_width);
-                        println!("{}", output);
-                    }
-                    ListItem::Paragraph(blocks) => {
-                        for block in blocks {
-                            print_block(
-                                block,
-                                terminal_width,
-                                Prefix::List("* ".into()),
-                                syntax,
-                                ps,
-                                ts,
-                            );
-                        }
-                    }
-                }
-            }
-            println!("");
-        }
-        Block::Raw(string) => println!("{}\n", string),
-        Block::Hr => {
-            if let Some(width) = terminal_width {
-                for _ in 0..width {
-                    print!("━");
-                }
-                println!("\n");
-            } else {
-                println!("━━━━━\n");
-            }
-        }
-    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(windows)]
     let _ = ansi_term::enable_ansi_support();
-
-    let terminal_width = terminal_size().map(|(w, _)| w.0 as usize);
 
     let ps = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
@@ -298,9 +115,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let blox = tokenize(&input);
-    for block in blox {
-        print_block(block, terminal_width, Prefix::None, &syntax, &ps, &ts);
-    }
+    let mapped = blox.into_iter().map(|b| map_block(b, &syntax, &ps, &ts)).collect();
+    let output = generate_markdown(mapped);
+
+    println!("{}", output);
 
     Ok(())
 }

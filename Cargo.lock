@@ -96,7 +96,6 @@ dependencies = [
  "ansi_term",
  "markdown",
  "syntect",
- "terminal_size",
  "textwrap",
 ]
 
@@ -378,16 +377,6 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "walkdir",
-]
-
-[[package]]
-name = "terminal_size"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a14cd9f8c72704232f0bfc8455c0e861f0ad4eb60cc9ec8a170e231414c1e13"
-dependencies = [
- "libc",
- "winapi",
 ]
 
 [[package]]
