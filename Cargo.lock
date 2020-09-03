@@ -70,6 +70,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
 
 [[package]]
+name = "cargo-explain"
+version = "1.0.0"
+dependencies = [
+ "ansi_term",
+ "atty",
+ "markdown",
+ "syntect",
+ "textwrap",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -98,17 +109,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba125de2af0df55319f41944744ad91c71113bf74a4646efff39afe1f6842db1"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "explain"
-version = "0.1.0"
-dependencies = [
- "ansi_term",
- "atty",
- "markdown",
- "syntect",
- "textwrap",
 ]
 
 [[package]]
