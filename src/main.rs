@@ -8,7 +8,7 @@ use std::process::{self, Command, Stdio};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use syntect::util::as_24_bit_terminal_escaped;
 use textwrap;
 
 const SYNTECT_THEME: &str = "base16-eighties.dark";
@@ -114,11 +114,9 @@ fn map_blocks(
 fn highlight_code(code: &str, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet) -> String {
     let mut output = String::with_capacity(code.len());
     let mut h = HighlightLines::new(syntax, &ts.themes[SYNTECT_THEME]);
-    for line in LinesWithEndings::from(&code) {
-        let ranges = h.highlight(line, &ps);
-        let escaped = as_24_bit_terminal_escaped(&ranges, true);
-        output.push_str(&escaped);
-    }
+    let ranges = h.highlight(code, ps);
+    let escaped = as_24_bit_terminal_escaped(&ranges, true);
+    output.push_str(&escaped);
     output.push_str(ANSI_RESET);
     output
 }
