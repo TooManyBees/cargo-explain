@@ -121,7 +121,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input = {
         let result = Command::new("rustc")
             .args(&["--explain", &err_name])
+            .stderr(Stdio::inherit())
             .output()?;
+        if !result.status.success() {
+            process::exit(1);
+        }
         String::from_utf8(result.stdout)
             .expect("rustc --explain terminal output wasn't valid utf-8")
     };
