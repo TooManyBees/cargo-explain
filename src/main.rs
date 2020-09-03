@@ -20,8 +20,20 @@ fn map_span(span: Span, syntax: &SyntaxReference, ps: &SyntaxSet, ts: &ThemeSet)
             let escaped = as_24_bit_terminal_escaped(&ranges, true);
             Span::Text(format!("{}{}", escaped, ANSI_RESET))
         },
-        Span::Emphasis(spans) => Span::Emphasis(map_spans(spans, syntax, ps, ts)),
-        Span::Strong(spans) => Span::Strong(map_spans(spans, syntax, ps, ts)),
+        Span::Emphasis(spans) => {
+            let mut spans = map_spans(spans, syntax, ps, ts);
+            let style = Style::new().italic();
+            spans.insert(0, Span::Text(style.prefix().to_string()));
+            spans.push(Span::Text(style.suffix().to_string()));
+            Span::Emphasis(spans)
+        },
+        Span::Strong(spans) => {
+            let mut spans = map_spans(spans, syntax, ps, ts);
+            let style = Style::new().bold();
+            spans.insert(0, Span::Text(style.prefix().to_string()));
+            spans.push(Span::Text(style.suffix().to_string()));
+            Span::Strong(spans)
+        },
         _ => span,
     }
 }
